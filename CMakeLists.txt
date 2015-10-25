@@ -46,3 +46,9 @@ target_link_libraries(gSLICr_lib ${CUDA_LIBRARY})
 
 add_executable(demo demo.cpp)
 target_link_libraries(demo gSLICr_lib ${OpenCV_LIBS})
+
+# Build python wrapper
+include(cmake/boost-python.cmake)
+
+boost_python_module(gSLIC gSLIC.cpp)
+target_link_libraries(gSLIC boost_system boost_python gSLICr_lib ${OpenCV_LIBS})
