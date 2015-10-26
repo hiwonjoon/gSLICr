@@ -50,10 +50,10 @@ using namespace boost::python;
 
 class gSLIC_py_module {
 public :
-    gSLIC_py_module() {
-        my_settings.img_size.x = 960;
-        my_settings.img_size.y = 540;
-        my_settings.no_segs = 2000;
+    gSLIC_py_module(int x, int y, int no_segs) {
+        my_settings.img_size.x = y;
+        my_settings.img_size.y = x;
+        my_settings.no_segs = no_segs;
         //my_settings.spixel_size = 16;
         my_settings.coh_weight = 0.6f;
         my_settings.no_iters = 5;
@@ -66,32 +66,19 @@ public :
         delete gSLICr_engine;
     }
 
-    Mat depth_seg(Mat depth_im, double maximum_depth) {
-        // gSLICr takes gSLICr::UChar4Image as input and out put
-        gSLICr::UChar4Image* in_img = new gSLICr::UChar4Image(my_settings.img_size, true, true);
-
-        Size s(my_settings.img_size.x, my_settings.img_size.y);
-        Mat seg_result;
-        seg_result.create(s, CV_16U);
-
-        //Colorize Depth
+    Mat depth_colorize(Mat depth_im, unsigned short  max_depth, unsigned short min_depth) {
+        Size s = depth_im.size();
         Mat fit_to_8u, colorized_depth_im;
-        double min, max;
-        minMaxIdx(depth_im, &min, &max);
-        depth_im.convertTo(fit_to_8u, CV_8UC1, 255 / (maximum_depth-min), -min);
-        applyColorMap(fit_to_8u, colorized_depth_im, cv::COLORMAP_AUTUMN);
+        for (int y = 0; y < s.height; y++) {
+          for (int x = 0; x < s.width; x++) {
+            if( depth_im.at<unsigned int>(y,x) < min_depth )
+              depth_im.at<unsigned int>(y,x) = min_depth;
+          }
+        }
+        depth_im.convertTo(fit_to_8u, CV_8UC1, 255.0 / (max_depth-min_depth), 255.0 / (max_depth-min_depth) * (-min_depth));
+        applyColorMap(fit_to_8u, colorized_depth_im, cv::COLORMAP_HSV);
 
-        //Process
-        change_image_format(colorized_depth_im, in_img);
-
-        gSLICr_engine->Process_Frame(in_img);
-        const gSLICr::IntImage * result = gSLICr_engine->Get_Seg_Res();
-
-        change_image_format(result, seg_result);
-
-        delete in_img;
-
-        return seg_result;
+        return colorized_depth_im;
     }
 
     Mat rgb_seg(Mat rgb_im) {
@@ -115,6 +102,45 @@ public :
         return seg_result;
     }
 
+    std::vector<Mat> adjacency_info(const Mat& seg_result, const Mat& depth ) {
+        double max;
+        cv::minMaxLoc(seg_result, NULL, &max);
+
+        Mat edges( (int)(max)+1,(int)(max)+1, CV_8U, Scalar(0) );
+
+        Mat nodes( (int)(max)+1, 3, CV_32F, Scalar(0.0) );
+
+        Size s = seg_result.size();
+        for (int y = 0; y < s.height; y++) {
+          for (int x = 0; x < s.width; x++) {
+            nodes.at<float>(seg_result.at<unsigned short>(y,x),0) += 1;
+            nodes.at<float>(seg_result.at<unsigned short>(y,x),1) += depth.at<unsigned int>(y,x);
+            if( y < s.height-1 && 
+                seg_result.at<unsigned short>(y,x) != seg_result.at<unsigned short>(y+1,x) )
+            {
+                edges.at<unsigned char>( seg_result.at<unsigned short>(y,x),seg_result.at<unsigned short>(y+1,x) ) = 1;
+                edges.at<unsigned char>( seg_result.at<unsigned short>(y+1,x),seg_result.at<unsigned short>(y,x) ) = 1;
+            }
+            if( x < s.width-1 && 
+                seg_result.at<unsigned short>(y,x) != seg_result.at<unsigned short>(y,x+1) )
+            {
+                edges.at<unsigned char>( seg_result.at<unsigned short>(y,x),seg_result.at<unsigned short>(y,x+1) ) = 1;
+                edges.at<unsigned char>( seg_result.at<unsigned short>(y,x+1),seg_result.at<unsigned short>(y,x) ) = 1;
+            }
+
+          }
+        }
+
+        for( int i = 0; i < (int)(max)+1; ++i) {
+            if( nodes.at<float>(i,0) != 0 ) 
+              nodes.at<float>(i,2) = nodes.at<float>(i,1) / nodes.at<float>(i,0);
+        }
+
+        std::vector<Mat> ret;
+        ret.push_back(edges);
+        ret.push_back(nodes);
+        return ret;
+    }
 
 private :
 	// instantiate a core_engine
@@ -124,9 +150,10 @@ private :
 
 BOOST_PYTHON_MODULE(gSLIC)
 {
-    class_<gSLIC_py_module>("gSLIC")
-        .def("depth_seg",&gSLIC_py_module::depth_seg)
+    class_<gSLIC_py_module>("gSLIC", init<int,int,int>() )
         .def("rgb_seg",&gSLIC_py_module::rgb_seg)
+        .def("depth_colorize",&gSLIC_py_module::depth_colorize)
+        .def("adjacency_info",&gSLIC_py_module::adjacency_info)
     ;
 }
 
