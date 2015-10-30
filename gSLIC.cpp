@@ -102,19 +102,32 @@ public :
         return seg_result;
     }
 
+    cv::Point3f projectPoint(int x, int y, int z) {
+        float z_3d = static_cast<float>(z);
+        float x_3d = (static_cast<float>(x) - 479.75f) * z_3d / 540.686f;
+        float y_3d = (static_cast<float>(y) - 269.75f) * z_3d / 540.686f;
+        cv::Point3f point(x_3d, y_3d, z_3d);
+        return point;
+    }
+
     std::vector<Mat> adjacency_info(const Mat& seg_result, const Mat& depth ) {
         double max;
         cv::minMaxLoc(seg_result, NULL, &max);
 
         Mat edges( (int)(max)+1,(int)(max)+1, CV_8U, Scalar(0) );
 
-        Mat nodes( (int)(max)+1, 3, CV_32F, Scalar(0.0) );
+        Mat nodes( (int)(max)+1, 1+3+3, CV_32F, Scalar(0.0) );
 
         Size s = seg_result.size();
         for (int y = 0; y < s.height; y++) {
           for (int x = 0; x < s.width; x++) {
+            cv::Point3f point = projectPoint( x,y, depth.at<unsigned int>(y,x) );
+
             nodes.at<float>(seg_result.at<unsigned short>(y,x),0) += 1;
-            nodes.at<float>(seg_result.at<unsigned short>(y,x),1) += depth.at<unsigned int>(y,x);
+            nodes.at<float>(seg_result.at<unsigned short>(y,x),1) += point.x;
+						nodes.at<float>(seg_result.at<unsigned short>(y,x),2) += point.y;
+						nodes.at<float>(seg_result.at<unsigned short>(y,x),3) += point.z;
+
             if( y < s.height-1 && 
                 seg_result.at<unsigned short>(y,x) != seg_result.at<unsigned short>(y+1,x) )
             {
@@ -133,7 +146,11 @@ public :
 
         for( int i = 0; i < (int)(max)+1; ++i) {
             if( nodes.at<float>(i,0) != 0 ) 
-              nodes.at<float>(i,2) = nodes.at<float>(i,1) / nodes.at<float>(i,0);
+            {
+              nodes.at<float>(i,4) = nodes.at<float>(i,1) / nodes.at<float>(i,0);
+              nodes.at<float>(i,5) = nodes.at<float>(i,2) / nodes.at<float>(i,0);
+              nodes.at<float>(i,6) = nodes.at<float>(i,3) / nodes.at<float>(i,0);
+            }
         }
 
         std::vector<Mat> ret;
