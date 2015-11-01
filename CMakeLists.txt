@@ -16,9 +16,11 @@ endif(APPLE)
 
 find_package(CUDA REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(PCL 1.7 REQUIRED)
 
 include_directories(${CUDA_INCLUDE_DIRS})
 include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(${PCL_INCLUDE_DIRS})
 add_subdirectory(ORUtils)
 
 set(GSLICR_LIB
@@ -35,14 +37,21 @@ gSLICr_Lib/gSLICr_defines.h
 gSLICr_Lib/gSLICr.h
 )
 
+set(MASKING_LIB
+    masking/masking.cpp
+)
+
+ADD_DEFINITIONS(${PCL_DEFINITIONS})
+
 list(APPEND "-std=c++11 -ftree-vectorize")
 SOURCE_GROUP(engines FILES ${GSLICR_LIB})
 
 cuda_add_library(gSLICr_lib
 			${GSLICR_LIB}
+            ${MASKING_LIB}
 			NVTimer.h
 			OPTIONS -gencode arch=compute_30,code=compute_30)
-target_link_libraries(gSLICr_lib ${CUDA_LIBRARY})
+        target_link_libraries(gSLICr_lib ${CUDA_LIBRARY} ${PCL_LIBRARIES})
 
 add_executable(demo demo.cpp)
 target_link_libraries(demo gSLICr_lib ${OpenCV_LIBS})
