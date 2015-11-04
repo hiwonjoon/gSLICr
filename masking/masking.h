@@ -2,6 +2,8 @@
 #define _MASKING_H_
 
 #include <pcl/point_types.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/filters/voxel_grid.h>
 #include <opencv2/core/core.hpp>
 
 namespace masking{
@@ -16,7 +18,9 @@ namespace masking{
                        float cx, float cy,
                        float fx, float fy,
                        cv::Mat &depth);
-    cv::Mat maskGenerator(cv::Mat depth);
-    cv::Mat removeTable(cv::Mat rgb, cv::Mat depth);
+    cv::Mat maskGenerator(cv::Mat depth, int filter_size);
+    void superVoxelClustering(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
+                              pcl::PointCloud<pcl::PointXYZL>::Ptr cloud_out);
+    cv::Mat superVoxelToImage(pcl::PointCloud<pcl::PointXYZL>::Ptr cloud);
 }
 #endif

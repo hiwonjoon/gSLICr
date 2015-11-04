@@ -23,6 +23,8 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${PCL_INCLUDE_DIRS})
 add_subdirectory(ORUtils)
 
+link_directories(${PCL_LIBRARY_DIRS})
+
 set(GSLICR_LIB
 gSLICr_Lib/engines/gSLICr_core_engine.h
 gSLICr_Lib/engines/gSLICr_seg_engine.h
@@ -48,10 +50,12 @@ SOURCE_GROUP(engines FILES ${GSLICR_LIB})
 
 cuda_add_library(gSLICr_lib
 			${GSLICR_LIB}
-            ${MASKING_LIB}
 			NVTimer.h
 			OPTIONS -gencode arch=compute_30,code=compute_30)
-        target_link_libraries(gSLICr_lib ${CUDA_LIBRARY} ${PCL_LIBRARIES})
+target_link_libraries(gSLICr_lib ${CUDA_LIBRARY})
+
+add_library(masking ${MASKING_LIB})
+target_link_libraries(masking ${OpenCV_LIBS} ${PCL_LIBS})
 
 add_executable(demo demo.cpp)
 target_link_libraries(demo gSLICr_lib ${OpenCV_LIBS})
@@ -60,4 +64,4 @@ target_link_libraries(demo gSLICr_lib ${OpenCV_LIBS})
 include(cmake/boost-python.cmake)
 
 boost_python_module(gSLIC gSLIC.cpp)
-target_link_libraries(gSLIC boost_system boost_python gSLICr_lib ${OpenCV_LIBS})
+target_link_libraries(gSLIC boost_system boost_python gSLICr_lib ${OpenCV_LIBS} masking ${PCL_LIBRARIES})

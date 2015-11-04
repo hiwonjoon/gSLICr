@@ -1,6 +1,7 @@
 #include "gSLICr_Lib/gSLICr.h"
 #include "opencv2/core/core.hpp"
 #include "opencv2/opencv.hpp"
+#include "masking/masking.h"
 
 using namespace std;
 using namespace cv;
@@ -128,13 +129,13 @@ public :
 						nodes.at<float>(seg_result.at<unsigned short>(y,x),2) += point.y;
 						nodes.at<float>(seg_result.at<unsigned short>(y,x),3) += point.z;
 
-            if( y < s.height-1 && 
+            if( y < s.height-1 &&
                 seg_result.at<unsigned short>(y,x) != seg_result.at<unsigned short>(y+1,x) )
             {
                 edges.at<unsigned char>( seg_result.at<unsigned short>(y,x),seg_result.at<unsigned short>(y+1,x) ) = 1;
                 edges.at<unsigned char>( seg_result.at<unsigned short>(y+1,x),seg_result.at<unsigned short>(y,x) ) = 1;
             }
-            if( x < s.width-1 && 
+            if( x < s.width-1 &&
                 seg_result.at<unsigned short>(y,x) != seg_result.at<unsigned short>(y,x+1) )
             {
                 edges.at<unsigned char>( seg_result.at<unsigned short>(y,x),seg_result.at<unsigned short>(y,x+1) ) = 1;
@@ -145,7 +146,7 @@ public :
         }
 
         for( int i = 0; i < (int)(max)+1; ++i) {
-            if( nodes.at<float>(i,0) != 0 ) 
+            if( nodes.at<float>(i,0) != 0 )
             {
               nodes.at<float>(i,4) = nodes.at<float>(i,1) / nodes.at<float>(i,0);
               nodes.at<float>(i,5) = nodes.at<float>(i,2) / nodes.at<float>(i,0);
@@ -159,6 +160,86 @@ public :
         return ret;
     }
 
+    Mat remove_table(Mat rgb, Mat depth, double threshold, int filter_size) {
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        *cloud = masking::cloudFromRGBD(depth, rgb, 479.75f, 269.75f, 540.686f, 540.686f, 2.5f);
+
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sampled(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::VoxelGrid<pcl::PointXYZRGB> sor;
+        sor.setInputCloud(cloud);
+        sor.setLeafSize(0.007f, 0.007f, 0.007f); // pick one pixel in 7mm X 7mm X 7mm voxel
+        sor.filter(*cloud_sampled);
+
+        std::cout << "Raw point cloud data : " << cloud->points.size() << " points" << std::endl;
+        std::cout << "Sampled point cloud data : " << cloud_sampled->points.size() << " points" << std::endl;
+
+        // Remove plane
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr filter1(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr filter2(new pcl::PointCloud<pcl::PointXYZRGB>);
+        masking::removePlane(cloud_sampled, filter1, 0.1);
+        masking::removePlane(filter1, filter2, threshold);
+
+        cv::Mat depth_filtered;
+        masking::rgbdFromCloud(*filter2, 479.25f, 269.75f, 540.686f, 540.686f, depth_filtered);
+
+        cv::Mat mask = masking::maskGenerator(depth_filtered, filter_size);
+
+        return mask;
+    }
+
+    Mat segment_image(Mat rgb, Mat depth) {
+        // Remove whiteboard
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        *cloud = masking::cloudFromRGBD(depth, rgb, 479.75f, 269.75f, 540.686f, 540.686f, 2.5f);
+
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sampled(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::VoxelGrid<pcl::PointXYZRGB> sor;
+        sor.setInputCloud(cloud);
+        sor.setLeafSize(0.007f, 0.007f, 0.007f); // pick one pixel in 7mm X 7mm X 7mm voxel
+        sor.filter(*cloud_sampled);
+
+        std::cout << "Raw point cloud data : " << cloud->points.size() << " points" << std::endl;
+        std::cout << "Sampled point cloud data : " << cloud_sampled->points.size() << " points" << std::endl;
+
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filter1(new pcl::PointCloud<pcl::PointXYZRGB>);
+        masking::removePlane(cloud_sampled, cloud_filter1, 0.1);
+
+        Mat depth_filtered;
+        masking::rgbdFromCloud(*cloud_filter1, 479.25f, 269.75f, 540.686f, 540.686f, depth_filtered);
+        Mat mask = masking::maskGenerator(depth_filtered, 10);
+
+        cv::imwrite("mask_filter1.png", mask);
+
+        // Apply masking
+        Mat rgb_masked = Mat::zeros(540, 960, CV_8UC3);
+        Mat depth_masked = Mat::zeros(540, 960, CV_32S);
+        for (int i = 0; i < mask.rows; ++i) {
+            for (int j = 0; j < mask.cols; ++j) {
+                rgb_masked.at<cv::Vec3b>(i, j)[0] = rgb.at<cv::Vec3b>(i,j)[0] * static_cast<unsigned char>(mask.at<float>(i,j));
+                rgb_masked.at<cv::Vec3b>(i, j)[1] = rgb.at<cv::Vec3b>(i,j)[1] * static_cast<unsigned char>(mask.at<float>(i,j));
+                rgb_masked.at<cv::Vec3b>(i, j)[2] = rgb.at<cv::Vec3b>(i,j)[2] * static_cast<unsigned char>(mask.at<float>(i,j));
+                depth_masked.at<int>(i,j) = depth.at<int>(i,j) * static_cast<int>(mask.at<float>(i,j));
+            }
+        }
+
+        cv::imwrite("rgb_masked.png", rgb_masked);
+        cv::imwrite("depth_masked.png", depth_masked);
+        cv::imwrite("depth.png", depth);
+
+        // Segment pointcloud
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_masked(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::PointCloud<pcl::PointXYZL>::Ptr cloud_segmented(new pcl::PointCloud<pcl::PointXYZL>);
+
+        *cloud_masked = masking::cloudFromRGBD(depth_masked, rgb_masked, 479.75f, 269.75f, 540.686f, 540.686f, 2.5f);
+        masking::superVoxelClustering(cloud_masked, cloud_segmented);
+
+        // Project cloud to image
+        cv::Mat image_segmented = masking::superVoxelToImage(cloud_segmented);
+
+        cv::imwrite("mask_segmented.png", image_segmented);
+
+        return image_segmented;
+    }
 private :
 	// instantiate a core_engine
 	gSLICr::engines::core_engine* gSLICr_engine;
@@ -171,6 +252,8 @@ BOOST_PYTHON_MODULE(gSLIC)
         .def("rgb_seg",&gSLIC_py_module::rgb_seg)
         .def("depth_colorize",&gSLIC_py_module::depth_colorize)
         .def("adjacency_info",&gSLIC_py_module::adjacency_info)
+        .def("remove_table",&gSLIC_py_module::remove_table)
+        .def("segment_image",&gSLIC_py_module::segment_image)
     ;
 }
 
