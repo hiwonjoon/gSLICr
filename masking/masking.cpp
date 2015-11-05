@@ -129,9 +129,9 @@ namespace masking{
                               pcl::PointCloud<pcl::PointXYZL>::Ptr cloud_out) {
         float voxel_resolution = 0.008f;
         float seed_resolution = 0.1f;
-        float color_importance = 0.2f;
-        float spatial_importance = 0.4f;
-        float normal_importance = 1.0f;
+        float color_importance = 1.0f;
+        float spatial_importance = 0.3f;
+        float normal_importance = 0.1f;
         bool use_single_cam_transform = false;
 
         pcl::SupervoxelClustering<pcl::PointXYZRGB> super(voxel_resolution, seed_resolution, use_single_cam_transform);

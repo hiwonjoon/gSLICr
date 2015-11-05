@@ -69,14 +69,21 @@ public :
 
     Mat depth_colorize(Mat depth_im, unsigned short  max_depth, unsigned short min_depth) {
         Size s = depth_im.size();
+        Mat depth_im_copy= depth_im.clone();
         Mat fit_to_8u, colorized_depth_im;
+
+        double min, max;
+        cv::minMaxLoc(depth_im, &min, &max);
+
+        max = std::min( max, static_cast<double>(max_depth) );
+
         for (int y = 0; y < s.height; y++) {
           for (int x = 0; x < s.width; x++) {
-            if( depth_im.at<unsigned int>(y,x) < min_depth )
-              depth_im.at<unsigned int>(y,x) = min_depth;
+            if( depth_im_copy.at<unsigned int>(y,x) < min_depth )
+              depth_im_copy.at<unsigned int>(y,x) = min_depth;
           }
         }
-        depth_im.convertTo(fit_to_8u, CV_8UC1, 255.0 / (max_depth-min_depth), 255.0 / (max_depth-min_depth) * (-min_depth));
+        depth_im_copy.convertTo(fit_to_8u, CV_8UC1, 255.0 / (max-min_depth), 255.0 / (max-min_depth) * (-min_depth));
         applyColorMap(fit_to_8u, colorized_depth_im, cv::COLORMAP_HSV);
 
         return colorized_depth_im;
@@ -202,13 +209,15 @@ public :
         std::cout << "Sampled point cloud data : " << cloud_sampled->points.size() << " points" << std::endl;
 
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filter1(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filter2(new pcl::PointCloud<pcl::PointXYZRGB>);
         masking::removePlane(cloud_sampled, cloud_filter1, 0.1);
+        masking::removePlane(cloud_filter1, cloud_filter2, 0.05);
 
         Mat depth_filtered;
-        masking::rgbdFromCloud(*cloud_filter1, 479.25f, 269.75f, 540.686f, 540.686f, depth_filtered);
+        masking::rgbdFromCloud(*cloud_filter2, 479.25f, 269.75f, 540.686f, 540.686f, depth_filtered);
         Mat mask = masking::maskGenerator(depth_filtered, 10);
 
-        cv::imwrite("mask_filter1.png", mask);
+        //cv::imwrite("mask_filter1.png", mask);
 
         // Apply masking
         Mat rgb_masked = Mat::zeros(540, 960, CV_8UC3);
@@ -222,9 +231,9 @@ public :
             }
         }
 
-        cv::imwrite("rgb_masked.png", rgb_masked);
-        cv::imwrite("depth_masked.png", depth_masked);
-        cv::imwrite("depth.png", depth);
+        //cv::imwrite("rgb_masked.png", rgb_masked);
+        //cv::imwrite("depth_masked.png", depth_masked);
+        //cv::imwrite("depth.png", depth);
 
         // Segment pointcloud
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_masked(new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -236,7 +245,7 @@ public :
         // Project cloud to image
         cv::Mat image_segmented = masking::superVoxelToImage(cloud_segmented);
 
-        cv::imwrite("mask_segmented.png", image_segmented);
+        //cv::imwrite("mask_segmented.png", image_segmented);
 
         return image_segmented;
     }
